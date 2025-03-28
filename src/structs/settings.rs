@@ -1,9 +1,8 @@
-use super::file_type::FileType;
+use super::file_type::{AvifSettings, EncodingOptions};
 
 #[derive(Clone)]
 pub struct Settings {
-    pub file_type: FileType,
-    pub quality: u8,
+    pub encoding_options: EncodingOptions,
     pub resize_options: ResizeOptions,
     pub name_extension: Option<String>,
     pub keep_exif: bool,
@@ -12,8 +11,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            file_type: FileType::WebP,
-            quality: 95,
+            encoding_options: EncodingOptions::Avif(AvifSettings::default()),
             resize_options: ResizeOptions::None,
             name_extension: None,
             keep_exif: false,

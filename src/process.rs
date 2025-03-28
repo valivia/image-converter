@@ -15,10 +15,7 @@ use image::{
 };
 
 use crate::{
-    structs::{
-        file_type::FileType,
-        settings::{ResizeOptions, Settings},
-    },
+    structs::{file_type::EncodingOptions, settings::{ResizeOptions, Settings}},
     types::{Message, Progress},
 };
 
@@ -196,29 +193,35 @@ fn resize_image(img: image::DynamicImage, settings: &Settings) -> image::Dynamic
 fn encode_image(img: image::DynamicImage, settings: &Settings) -> Result<Vec<u8>, Box<dyn Error>> {
     let mut buf = Vec::new();
 
-    let data = match settings.file_type {
+    let data = match &settings.encoding_options {
         // Webp
-        FileType::WebP => webp::Encoder::from_image(&img)
-            .inspect_err(|&e| {
+        EncodingOptions::WebP(options) => {
+            let encoder = webp::Encoder::from_image(&img).inspect_err(|&e| {
                 eprintln!("Failed to encode image: {}", e);
-            })?
-            .encode(settings.quality as f32)
-            .to_vec(),
+            })?;
+
+            let buffer = match options.lossless {
+                true => encoder.encode_lossless().to_vec(),
+                false => encoder.encode(options.quality as f32).to_vec(),
+            };
+
+            buffer.to_vec()
+        }
 
         // Avif
-        FileType::Avif => {
+        EncodingOptions::Avif(options) => {
             img.write_with_encoder(AvifEncoder::new_with_speed_quality(
                 &mut buf,
-                8,
-                settings.quality,
+                options.speed,
+                options.quality,
             ))
             .map_err(|e| format!("Failed to encode AVIF: {}", e))?;
             buf
         }
 
         // Jpeg
-        FileType::Jpeg => {
-            img.write_with_encoder(JpegEncoder::new_with_quality(&mut buf, settings.quality))
+        EncodingOptions::Jpeg(options) => {
+            img.write_with_encoder(JpegEncoder::new_with_quality(&mut buf, options.quality))
                 .map_err(|e| format!("Failed to encode JPEG: {}", e))?;
             buf
         }
@@ -240,17 +243,13 @@ fn save_image(data: &[u8], image_path: &Path, settings: &Settings) -> Result<(),
         })?
         .to_owned();
 
-    match settings.file_type {
-        FileType::WebP => {
-            output_file_name.push_str(".webp");
-        }
-        FileType::Avif => {
-            output_file_name.push_str(".avif");
-        }
-        FileType::Jpeg => {
-            output_file_name.push_str(".jpg");
-        }
-    }
+    let extension = match settings.encoding_options {
+        EncodingOptions::WebP(_) => ".webp",
+        EncodingOptions::Avif(_) => ".avif",
+        EncodingOptions::Jpeg(_) => ".jpg",
+    };
+
+    output_file_name.push_str(extension);
 
     let output_file_path = Path::new(OUTPUT_FOLDER).join(output_file_name);
 

@@ -12,7 +12,10 @@ use eframe::egui;
 use crate::{
     components::resize::resize_input,
     process::convert_images,
-    structs::{file_type::FileType, settings::Settings},
+    structs::{
+        file_type::{EncodingOptions, JpegSettings, WebpSettings},
+        settings::{self, Settings},
+    },
     types::{Message, Progress},
 };
 
@@ -115,6 +118,7 @@ impl App {
         }
     }
 
+    // Pages
     fn home_page(&mut self, ui: &mut egui::Ui) {
         ui.vertical(|ui| {
             ui.label(self.messages.join("\n"));
@@ -143,15 +147,52 @@ impl App {
         ui.vertical(|ui| {
             // Type
             egui::ComboBox::from_label("Choose export type")
-                .selected_text(format!("{:?}", self.settings.file_type))
+                .selected_text(format!("{}", self.settings.encoding_options))
                 .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut self.settings.file_type, FileType::WebP, "WebP");
-                    ui.selectable_value(&mut self.settings.file_type, FileType::Avif, "AVIF");
-                    ui.selectable_value(&mut self.settings.file_type, FileType::Jpeg, "JPEG");
+                    ui.selectable_value(
+                        &mut self.settings.encoding_options,
+                        EncodingOptions::WebP(WebpSettings::default()),
+                        "WebP",
+                    );
+                    ui.selectable_value(
+                        &mut self.settings.encoding_options,
+                        EncodingOptions::Avif(Default::default()),
+                        "AVIF",
+                    );
+                    ui.selectable_value(
+                        &mut self.settings.encoding_options,
+                        EncodingOptions::Jpeg(JpegSettings::default()),
+                        "JPEG",
+                    );
                 });
 
-            // Quality
-            ui.add(egui::Slider::new(&mut self.settings.quality, 5..=100).text("Quality"));
+            match &mut self.settings.encoding_options {
+                EncodingOptions::Avif(settings) => {
+                    // Lossless
+                    ui.add(egui::Checkbox::new(&mut settings.lossless, "Lossless"));
+
+                    // Quality
+                    ui.add(egui::Slider::new(&mut settings.quality, 5..=100).text("Quality"));
+
+                    // Speed
+                    ui.add(egui::Slider::new(&mut settings.speed, 1..=10).text("Speed"));
+                }
+                EncodingOptions::WebP(settings) => {
+                    // Lossless
+                    ui.add(egui::Checkbox::new(&mut settings.lossless, "Lossless"));
+
+                    // Quality
+                    ui.add_enabled(
+                        !settings.lossless,
+                        egui::Slider::new(&mut settings.quality, 5..=100).text("Quality"),
+                    );
+                }
+
+                EncodingOptions::Jpeg(settings) => {
+                    // Quality
+                    ui.add(egui::Slider::new(&mut settings.quality, 5..=100).text("Quality"));
+                }
+            }
         });
     }
 
