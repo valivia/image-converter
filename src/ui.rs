@@ -1,4 +1,5 @@
 use std::fmt::Write;
+use std::path::PathBuf;
 use std::{
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -10,6 +11,8 @@ use std::{
 
 use eframe::egui;
 
+use crate::structs::update::Update;
+use crate::util::files::get_files;
 use crate::{
     components::resize::resize_input,
     process::convert_images,
@@ -17,10 +20,10 @@ use crate::{
         file_type::{EncodingOptions, JpegSettings, WebpSettings},
         settings::{ResizeOptions, Settings},
     },
-    types::{Message, Progress},
 };
 
 const FORBIDDEN_CHARS: &[char] = &['/', '\\', ':', '*', '?', '"', '<', '>', '|'];
+const LOG_LENGTH: usize = 18;
 
 #[derive(PartialEq, Clone, Copy)]
 enum Page {
@@ -38,12 +41,14 @@ pub struct App {
 
     // Communication
     stop_flag: Arc<AtomicBool>,
-    receiver: Option<std::sync::mpsc::Receiver<Message>>,
+    receiver: Option<std::sync::mpsc::Receiver<Update>>,
 
     // Messages
     messages: Vec<String>,
 
-    progress: Option<Progress>,
+    files: Vec<PathBuf>,
+    success: Vec<PathBuf>,
+    failed: Vec<PathBuf>,
 }
 
 impl Default for App {
@@ -58,7 +63,9 @@ impl Default for App {
             receiver: None,
             messages: Vec::new(),
 
-            progress: None,
+            files: get_files().unwrap(),
+            success: Vec::new(),
+            failed: Vec::new(),
         }
     }
 }
@@ -70,22 +77,24 @@ impl App {
 
     fn handle_completion(&mut self) {
         self.receiver = None;
-        self.progress = None;
+        self.success.clear();
+        self.failed.clear();
         self.stop_flag.store(false, Ordering::Relaxed);
     }
 
     fn start_processing(&mut self) {
         self.stop_flag.store(false, Ordering::Relaxed);
-        let (sender, receiver) = channel::<Message>();
+        let (sender, receiver) = channel::<Update>();
         self.receiver = Some(receiver);
 
         self.messages.clear();
 
         let settings = self.settings.clone();
+        let files = self.files.clone();
         let stop_flag = Arc::clone(&self.stop_flag);
 
         thread::spawn(move || {
-            convert_images(sender, stop_flag, settings);
+            convert_images(sender, stop_flag, files, settings);
         });
     }
 
@@ -93,31 +102,42 @@ impl App {
         if let Some(receiver) = &self.receiver {
             if let Ok(received) = receiver.try_recv() {
                 let received = match received {
-                    Message::Warning(msg) => format!("⚠️: {}", msg),
-                    Message::Failed(msg) => {
-                        self.handle_completion();
-                        format!("⛔: {}", msg)
+                    Update::StartProcessing(path) => {
+                        let file_name = path.file_name().unwrap().to_str().unwrap();
+                        format!("Processing '{}'", file_name)
                     }
-                    Message::Progress(progress) => {
-                        println!("Progress: {}/{}", progress.success, progress.total);
-                        self.progress = Some(progress);
-                        return;
+                    Update::FinishedProcessing(path, success, duration) => {
+                        let file_name = path.file_name().unwrap().to_str().unwrap();
+                        let message = if success {
+                            self.success.push(path.clone());
+                            format!("Processed '{}'", file_name)
+                        } else {
+                            self.failed.push(path.clone());
+                            format!("Failed to process '{}'", file_name)
+                        };
+                        format!("{} ({:#?})", message, duration)
                     }
-                    Message::Message(msg) => msg,
-                    Message::Completed => {
+                    Update::Message(msg) => msg,
+                    Update::QueueCompleted(duration) => {
                         let message = match self.stop_flag.load(Ordering::Relaxed) {
-                            true => "Stopped",
-                            false => "Completed",
+                            true => "Stopped".to_string(),
+                            false => format!("Completed in {:#?}", duration),
                         };
                         self.handle_completion();
                         message.to_string()
                     }
                 };
-                self.messages.push(received);
-                if self.messages.len() > 18 {
-                    self.messages.remove(0);
-                }
+
+                self.push_message(received);
             }
+        }
+    }
+
+    fn push_message(&mut self, message: String) {
+        self.messages.push(message);
+
+        if self.messages.len() > LOG_LENGTH {
+            self.messages.remove(0);
         }
     }
 
@@ -264,9 +284,12 @@ impl eframe::App for App {
         // State
         self.handle_messages();
 
-        let percentage = match &self.progress {
-            Some(progress) => (progress.success + progress.failed) as f32 / progress.total as f32,
-            None => 1.0,
+        let total_processed = self.success.len() + self.failed.len();
+
+        let percentage = if total_processed > 0 {
+            total_processed as f32 / self.files.len() as f32
+        } else {
+            0.0
         };
 
         // Render
@@ -311,7 +334,7 @@ impl eframe::App for App {
                         });
                     }
 
-                    if self.progress.is_some() {
+                    if total_processed > 0 {
                         ui.label(format!("{:.0}%", percentage * 100.0));
                     }
                 });

@@ -5,8 +5,11 @@ use eframe::egui;
 mod components;
 mod process;
 mod structs;
-mod types;
+mod util;
 mod ui;
+
+pub static INPUT_FOLDER: &str = "input";
+pub static OUTPUT_FOLDER: &str = "output";
 
 fn main() -> eframe::Result {
     let options = eframe::NativeOptions {

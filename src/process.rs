@@ -14,126 +14,62 @@ use image::{
     GenericImageView,
 };
 
+use rayon::prelude::*;
+
 use crate::{
     structs::{
         file_type::EncodingOptions,
-        settings::{ResizeOptions, Settings},
+        settings::{ResizeOptions, Settings}, update::Update,
     },
-    types::{Message, Progress},
+    OUTPUT_FOLDER,
 };
 
-static INPUT_FOLDER: &str = "input";
-static OUTPUT_FOLDER: &str = "output";
-
 pub fn convert_images(
-    sender: std::sync::mpsc::Sender<Message>,
+    sender: std::sync::mpsc::Sender<Update>,
     stop_flag: Arc<AtomicBool>,
+    files: Vec<PathBuf>,
     settings: Settings,
 ) {
-    let files = match get_files() {
-        Ok(files) => files,
-        Err(e) => {
-            println!("Failed to get files: {}", e);
-            sender
-                .send(Message::Failed("Failed to get files".to_string()))
-                .unwrap();
-            return;
-        }
-    };
-
+    let queue_start_time = std::time::Instant::now();
     sender
-        .send(Message::Message(format!(
+        .send(Update::Message(format!(
             "Processing {} files...",
             files.len()
         )))
         .unwrap();
 
-    let mut progress = Progress::new(files.len() as u32);
-    sender.send(Message::Progress(progress.clone())).unwrap();
-
-    for file in files {
+    files.par_iter().for_each(|file| {
         let start_time = std::time::Instant::now();
+
         if stop_flag.load(Ordering::Relaxed) {
-            sender.send(Message::Completed).unwrap();
+            let queue_elapsed = queue_start_time.elapsed();
+            sender.send(Update::QueueCompleted(queue_elapsed)).unwrap();
             return;
         }
 
         let file_name = file.file_name().unwrap().to_str().unwrap();
 
-        sender
-            .send(Message::Message(format!("Processing '{}'...", &file_name,)))
-            .unwrap();
+        sender.send(Update::StartProcessing(file.clone())).unwrap();
 
-        match convert_image(&file, &settings) {
+        let success = match convert_image(file, &settings) {
             Ok(_) => {
-                let elapsed = start_time.elapsed().as_secs_f32();
-                progress.increment_success();
-                sender
-                    .send(Message::Message(format!(
-                        "Processed '{}' in {:.2} seconds",
-                        &file_name, elapsed
-                    )))
-                    .unwrap();
+                println!("Processed '{}'", file_name);
+                true
             }
             Err(e) => {
                 eprintln!("Failed to process '{}': {}", file_name, e);
-                progress.increment_failed();
-                sender
-                    .send(Message::Warning(format!(
-                        "Failed to process '{}'",
-                        &file_name,
-                    )))
-                    .unwrap();
+                false
             }
-        }
-        sender.send(Message::Progress(progress.clone())).unwrap();
-    }
+        };
 
-    sender.send(Message::Completed).unwrap();
-}
+        let elapsed = start_time.elapsed();
+        sender
+            .send(Update::FinishedProcessing(file.clone(), success, elapsed))
+            .unwrap();
+    });
 
-fn get_files() -> Result<Vec<PathBuf>, Box<dyn Error>> {
-    let input_path = Path::new(INPUT_FOLDER);
-    let output_path = Path::new(OUTPUT_FOLDER);
-
-    // Input folder
-    if !input_path.exists() {
-        println!("Creating input folder");
-        fs::create_dir(input_path)?;
-    } else if !input_path.is_dir() {
-        return Err(format!("{} is not a directory", INPUT_FOLDER).into());
-    }
-
-    // Output folder
-    if !output_path.exists() {
-        println!("Creating output folder");
-        fs::create_dir(output_path)?;
-    } else if !output_path.is_dir() {
-        return Err(format!("{} is not a directory", OUTPUT_FOLDER).into());
-    }
-
-    let allowed_extensions = ["jpg", "jpeg", "png", "avif"];
-
-    // Get all image files
-    let files: Vec<PathBuf> = fs::read_dir(input_path)?
-        .filter_map(|entry| {
-            if let Ok(entry) = entry {
-                let path = entry.path();
-                if path.is_file() {
-                    if let Some(extension) = path.extension() {
-                        if let Some(ext) = extension.to_str().map(|ext| ext.to_ascii_lowercase()) {
-                            if allowed_extensions.contains(&ext.as_str()) {
-                                return Some(path);
-                            }
-                        }
-                    }
-                }
-            }
-            None
-        })
-        .collect();
-
-    Ok(files)
+    let queue_elapsed = queue_start_time.elapsed();
+    sender.send(Update::QueueCompleted(queue_elapsed)).unwrap();
 }
 
 fn convert_image(path: &Path, settings: &Settings) -> Result<(), Box<dyn Error>> {

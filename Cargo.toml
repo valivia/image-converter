@@ -3,14 +3,15 @@ name = "image_converter"
 version = "0.1.0"
 edition = "2021"
 
-[profile.release]
-strip = true
-lto = true
-opt-level = "z"
+# [profile.release]
+# strip = true
+# lto = true
+# opt-level = "z"
 
 [dependencies]
 eframe = "0.31.1"
 egui = "0.31.1"
 egui_extras = "0.31.1"
 image = "0.25.5"
+rayon = "1.10.0"
 webp = "0.3.0"
