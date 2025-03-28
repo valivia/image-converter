@@ -15,7 +15,10 @@ use image::{
 };
 
 use crate::{
-    structs::{file_type::EncodingOptions, settings::{ResizeOptions, Settings}},
+    structs::{
+        file_type::EncodingOptions,
+        settings::{ResizeOptions, Settings},
+    },
     types::{Message, Progress},
 };
 
@@ -242,6 +245,10 @@ fn save_image(data: &[u8], image_path: &Path, settings: &Settings) -> Result<(),
             "Invalid file stem"
         })?
         .to_owned();
+
+    if let Some(name_extension) = &settings.name_extension {
+        output_file_name.push_str(name_extension);
+    }
 
     let extension = match settings.encoding_options {
         EncodingOptions::WebP(_) => ".webp",

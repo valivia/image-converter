@@ -5,6 +5,8 @@ edition = "2021"
 
 [profile.release]
 strip = true
+lto = true
+opt-level = "z"
 
 [dependencies]
 eframe = "0.31.1"

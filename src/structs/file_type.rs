@@ -8,9 +8,9 @@ pub enum EncodingOptions {
 impl std::fmt::Display for EncodingOptions {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            EncodingOptions::Avif(_) => write!(f, "AVIF"),
-            EncodingOptions::WebP(_) => write!(f, "WebP"),
-            EncodingOptions::Jpeg(_) => write!(f, "JPEG"),
+            EncodingOptions::Avif(_) => write!(f, "avif"),
+            EncodingOptions::WebP(_) => write!(f, "webp"),
+            EncodingOptions::Jpeg(_) => write!(f, "jpg"),
         }
     }
 }
@@ -27,7 +27,7 @@ impl Default for AvifSettings {
     fn default() -> Self {
         Self {
             quality: 75,
-            speed: 8,
+            speed: 3,
             lossless: false,
         }
     }

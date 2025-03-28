@@ -1,4 +1,4 @@
-// #![windows_subsystem = "windows"]
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use eframe::egui;
 
@@ -9,12 +9,12 @@ mod types;
 mod ui;
 
 fn main() -> eframe::Result {
-    env_logger::init();
     let options = eframe::NativeOptions {
         centered: true,
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([600.0, 400.0])
-            .with_resizable(false),
+            .with_resizable(false)
+            .with_maximize_button(false),
         ..Default::default()
     };
 

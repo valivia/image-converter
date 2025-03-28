@@ -1,3 +1,4 @@
+use std::fmt::Write;
 use std::{
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -14,10 +15,12 @@ use crate::{
     process::convert_images,
     structs::{
         file_type::{EncodingOptions, JpegSettings, WebpSettings},
-        settings::{self, Settings},
+        settings::{ResizeOptions, Settings},
     },
     types::{Message, Progress},
 };
+
+const FORBIDDEN_CHARS: &[char] = &['/', '\\', ':', '*', '?', '"', '<', '>', '|'];
 
 #[derive(PartialEq, Clone, Copy)]
 enum Page {
@@ -48,7 +51,7 @@ impl Default for App {
         Self {
             settings: Settings::default(),
 
-            page: Page::Encoding,
+            page: Page::Home,
 
             // Communication
             stop_flag: Arc::new(AtomicBool::new(false)),
@@ -111,7 +114,7 @@ impl App {
                     }
                 };
                 self.messages.push(received);
-                if self.messages.len() > 20 {
+                if self.messages.len() > 18 {
                     self.messages.remove(0);
                 }
             }
@@ -120,31 +123,76 @@ impl App {
 
     // Pages
     fn home_page(&mut self, ui: &mut egui::Ui) {
-        ui.vertical(|ui| {
-            ui.label(self.messages.join("\n"));
-        });
+        // Encoding
+        let mut summary = String::new();
+
+        write!(
+            summary,
+            "Your images will be saved as {{name}}{}.{}",
+            self.settings.name_extension.as_deref().unwrap_or(""),
+            self.settings.encoding_options
+        )
+        .unwrap();
+
+        // Resize options
+        let resize_options = match self.settings.resize_options {
+            ResizeOptions::None => "with their original resolution".to_string(),
+            ResizeOptions::Largest(size) => {
+                format!("and will be resized to {}px on the largest dimension", size)
+            }
+            ResizeOptions::Smallest(size) => {
+                format!(
+                    "and will be resized to {}px on the smallest dimension",
+                    size
+                )
+            }
+            ResizeOptions::Exact(width, height) => {
+                format!("and will be resized to {}px by {}px", width, height)
+            }
+        };
+
+        write!(summary, ", {}.", resize_options).unwrap();
+
+        ui.heading("Summary");
+        ui.label(summary);
+
+        ui.add_space(8.0);
+
+        ui.heading("Logs");
+        ui.label(self.messages.join("\n"));
     }
 
     fn export_page(&mut self, ui: &mut egui::Ui) {
-        ui.vertical(|ui| {
-            // Name extension
-            ui.horizontal(|ui| {
-                ui.label("Name extension");
-                ui.text_edit_singleline(
-                    self.settings.name_extension.get_or_insert_with(String::new),
-                );
-            });
-
-            // Exif
-            ui.add(egui::Checkbox::new(
-                &mut self.settings.keep_exif,
-                "Keep EXIF data",
-            ));
+        ui.heading("Export options");
+        ui.horizontal(|ui| {
+            ui.label("Name extension");
+            ui.text_edit_singleline(self.settings.name_extension.get_or_insert_with(String::new));
         });
+
+        // Remove forbidden characters
+        if let Some(extension) = self.settings.name_extension.take() {
+            let mut cleaned = extension.trim().to_string();
+
+            for c in FORBIDDEN_CHARS {
+                cleaned.retain(|x| x != *c);
+            }
+
+            self.settings.name_extension = match cleaned.is_empty() {
+                true => None,
+                false => Some(cleaned),
+            };
+        }
+
+        // Exif
+        // ui.add(egui::Checkbox::new(
+        //     &mut self.settings.keep_exif,
+        //     "Keep EXIF data",
+        // ));
     }
 
     fn encoding_page(&mut self, ui: &mut egui::Ui) {
         ui.vertical(|ui| {
+            ui.heading("Encoding options");
             // Type
             egui::ComboBox::from_label("Choose export type")
                 .selected_text(format!("{}", self.settings.encoding_options))
@@ -169,7 +217,7 @@ impl App {
             match &mut self.settings.encoding_options {
                 EncodingOptions::Avif(settings) => {
                     // Lossless
-                    ui.add(egui::Checkbox::new(&mut settings.lossless, "Lossless"));
+                    // ui.add(egui::Checkbox::new(&mut settings.lossless, "Lossless"));
 
                     // Quality
                     ui.add(egui::Slider::new(&mut settings.quality, 5..=100).text("Quality"));
@@ -197,11 +245,17 @@ impl App {
     }
 
     fn resize_page(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Resize options");
         resize_input(ui, &mut self.settings);
     }
 
     fn about_page(&mut self, ui: &mut egui::Ui) {
-        ui.label("About page");
+        ui.heading("About");
+        ui.label("Simple bulk image converter and resizer written in rust.");
+        ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui| {
+            ui.label("Made with <3 by");
+            ui.hyperlink_to("Owlive", "https://owlive.eu/");
+        });
     }
 }
 
@@ -242,6 +296,7 @@ impl eframe::App for App {
                 }
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Max), |ui| {
+                    ui.add_space(10.0);
                     if self.receiver.is_none() {
                         // Start button
                         if ui.button("Run").clicked() {
@@ -260,15 +315,13 @@ impl eframe::App for App {
                         ui.label(format!("{:.0}%", percentage * 100.0));
                     }
                 });
-
-                ui.add_space(10.0); // Optional spacing
             });
 
             ui.add_space(8.0);
 
             ui.add(egui::ProgressBar::new(percentage).desired_height(8.0));
 
-            ui.add_space(16.0);
+            ui.add_space(8.0);
 
             // Content
             match self.page {
