@@ -7,13 +7,8 @@ edition = "2021"
 strip = true
 
 [dependencies]
-ravif = { version = "0.11.11", default-features = false, features = [
-    "threading",
-] }
 eframe = "0.31.1"
 egui = "0.31.1"
 egui_extras = "0.31.1"
-env_logger = "0.11.7"
 image = "0.25.5"
 webp = "0.3.0"
-rgb = "0.8.50"

@@ -3,7 +3,7 @@ use super::file_type::FileType;
 #[derive(Clone)]
 pub struct Settings {
     pub file_type: FileType,
-    pub quality: u32,
+    pub quality: u8,
     pub resize_options: ResizeOptions,
     pub name_extension: Option<String>,
     pub keep_exif: bool,

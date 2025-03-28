@@ -8,7 +8,11 @@ use std::{
     },
 };
 
-use image::{imageops::FilterType, GenericImageView};
+use image::{
+    codecs::{avif::AvifEncoder, jpeg::JpegEncoder},
+    imageops::FilterType,
+    GenericImageView,
+};
 
 use crate::{
     structs::{
@@ -190,6 +194,8 @@ fn resize_image(img: image::DynamicImage, settings: &Settings) -> image::Dynamic
 }
 
 fn encode_image(img: image::DynamicImage, settings: &Settings) -> Result<Vec<u8>, Box<dyn Error>> {
+    let mut buf = Vec::new();
+
     let data = match settings.file_type {
         // Webp
         FileType::WebP => webp::Encoder::from_image(&img)
@@ -201,33 +207,20 @@ fn encode_image(img: image::DynamicImage, settings: &Settings) -> Result<Vec<u8>
 
         // Avif
         FileType::Avif => {
-            let img_data = img.to_rgba8().into_raw(); // Convert to 8-bit RGBA
-            let rgba_data: Vec<rgb::RGBA8> = img_data
-                .chunks_exact(4) // Process every 4 bytes as one RGBA pixel
-                .map(|chunk| rgb::RGBA8 {
-                    r: chunk[0],
-                    g: chunk[1],
-                    b: chunk[2],
-                    a: chunk[3],
-                })
-                .collect();
-
-            let buffer = ravif::Img::new(
-                rgba_data.as_slice(),
-                img.width() as usize,
-                img.height() as usize,
-            );
-
-            let encoded = ravif::Encoder::new()
-                .with_quality(settings.quality as f32)
-                .encode_rgba(buffer)
-                .map_err(|e| format!("Failed to encode AVIF: {}", e))?;
-
-            encoded.avif_file
+            img.write_with_encoder(AvifEncoder::new_with_speed_quality(
+                &mut buf,
+                8,
+                settings.quality,
+            ))
+            .map_err(|e| format!("Failed to encode AVIF: {}", e))?;
+            buf
         }
-        _ => {
-            eprintln!("Unsupported file type: {:?}", settings.file_type);
-            return Err("Unsupported file type".into());
+
+        // Jpeg
+        FileType::Jpeg => {
+            img.write_with_encoder(JpegEncoder::new_with_quality(&mut buf, settings.quality))
+                .map_err(|e| format!("Failed to encode JPEG: {}", e))?;
+            buf
         }
     };
 
